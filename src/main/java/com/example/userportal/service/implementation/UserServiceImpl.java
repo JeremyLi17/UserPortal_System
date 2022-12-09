@@ -6,6 +6,7 @@ import com.example.userportal.exception.domain.EmailExistException;
 import com.example.userportal.exception.domain.UserNotFoundException;
 import com.example.userportal.exception.domain.UsernameExistException;
 import com.example.userportal.repository.UserRepository;
+import com.example.userportal.service.EmailService;
 import com.example.userportal.service.LoginAttemptService;
 import com.example.userportal.service.UserService;
 import org.apache.commons.lang3.RandomStringUtils;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import javax.mail.MessagingException;
 import java.util.Date;
 import java.util.List;
 
@@ -36,7 +38,7 @@ import static com.example.userportal.enumeration.Role.*;
 @Qualifier("userDetailService")
 public class UserServiceImpl implements UserService, UserDetailsService {
 
-
+    private final EmailService emailService;
     private final Logger LOGGER = LoggerFactory.getLogger(getClass());
     private final UserRepository userRepository;
     private final BCryptPasswordEncoder passwordEncoder;
@@ -45,10 +47,12 @@ public class UserServiceImpl implements UserService, UserDetailsService {
     @Autowired
     public UserServiceImpl(UserRepository userRepository,
                            BCryptPasswordEncoder passwordEncoder,
-                           LoginAttemptService loginAttemptService) {
+                           LoginAttemptService loginAttemptService,
+                           EmailService emailService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.loginAttemptService = loginAttemptService;
+        this.emailService = emailService;
     }
 
     @Override
@@ -69,24 +73,14 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         }
     }
 
-    private void validateLoginAttempt(User user) {
-        if (user.isNotLocked()) {
-            if (loginAttemptService.hasExceededMaxAttempts(user.getUsername())) {
-                user.setNotLocked(false);
-            } else {
-                user.setNotLocked(true);
-            }
-        } else {
-            loginAttemptService.evictUserFromLoginAttemptCache(user.getUsername());
-        }
-    }
-
     @Override
     public User register(String firstName,
                          String lastName,
                          String username,
                          String email)
-            throws UserNotFoundException, EmailExistException, UsernameExistException {
+            throws UserNotFoundException, EmailExistException,
+            UsernameExistException, MessagingException {
+
         validateNewUsernameAndEmail(StringUtils.EMPTY, username, email);
         User user = new User();
         user.setUserId(generateUserId());
@@ -106,7 +100,20 @@ public class UserServiceImpl implements UserService, UserDetailsService {
         user.setProfileImageUrl(getTemporaryProfileImageUrl());
         userRepository.save(user);
         LOGGER.info("New user password: " + password);
+//        emailService.sendNewPasswordEmail(firstName, password, email);
         return user;
+    }
+
+    private void validateLoginAttempt(User user) {
+        if (user.isNotLocked()) {
+            if (loginAttemptService.hasExceededMaxAttempts(user.getUsername())) {
+                user.setNotLocked(false);
+            } else {
+                user.setNotLocked(true);
+            }
+        } else {
+            loginAttemptService.evictUserFromLoginAttemptCache(user.getUsername());
+        }
     }
 
     private String getTemporaryProfileImageUrl() {
